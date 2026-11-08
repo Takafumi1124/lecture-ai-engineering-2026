@@ -5,10 +5,13 @@
 """
 
 import json
+import random
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+LOG_DIR = Path(__file__).resolve().parent.parent / "learning_log"
 MAX_RESULTS = 3
 
 
@@ -42,11 +45,13 @@ def search_glossary(query: str) -> str:
     exact = [e for e in glossary if q in _names(e)]
     # 「r」のような短い別名が何にでも当たらないよう、名前側が短いものは除く
     partial = [
-        e for e in glossary
+        e
+        for e in glossary
         if e not in exact and any(q in n or (len(n) >= 3 and n in q) for n in _names(e))
     ]
     in_definition = [
-        e for e in glossary
+        e
+        for e in glossary
         if e not in exact and e not in partial and q in _normalize(e["definition"])
     ]
     hits = (exact + partial + in_definition)[:MAX_RESULTS]
@@ -77,3 +82,41 @@ def get_lecture_summary(lecture: int) -> str:
         available = sorted(p.stem for p in (DATA_DIR / "lectures").glob("*.md"))
         return f"第{lecture}回の要点はまだありません。用意されている回: {', '.join(available)}"
     return path.read_text(encoding="utf-8")
+
+
+def make_quiz(lecture: int) -> str:
+    """指定した回の用語から1つを選び、
+    確認問題と答えを返す。
+
+    「第2回の確認問題を出して」のように、
+    復習用の問題を求められたときに使う。
+    """
+    # 1. load_glossary()  から lecture が一致する用語を集める
+    entries = [entry for entry in load_glossary() if entry["lecture"] == lecture]
+    if not entries:
+        return f"第{lecture}回の用語は見つかりませんでした。"
+    # 2. 1 つ選ぶ（random.choice）
+    entry = random.choice(entries)
+    # 3. 問題と答えを文字列で返す（json.dumps など）
+    return json.dumps(
+        {
+            "question": f"「{entry['term']}」の意味は？",
+            "answer": entry["definition"],
+        },
+        ensure_ascii=False,
+    )
+
+
+def save_learning_log(topic: str, note: str) -> str:
+    """学習した内容を learning_log/ に保存する。
+
+    利用者が学習内容の記録を求めたときに使う。
+    ファイルへの保存を伴うため、実行前に利用者の承認が必要。
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    path = LOG_DIR / f"{datetime.now():%Y%m%d_%H%M%S}.json"
+    path.write_text(
+        json.dumps({"topic": topic, "note": note}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return f"保存しました: {path.name}"
